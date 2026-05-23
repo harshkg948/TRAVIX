@@ -302,31 +302,67 @@ app.post("/api/analyze", async (req, res) => {
   try {
     const ai = getGeminiClient();
     if (process.env.GEMINI_API_KEY) {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: promptText,
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
+      const maxRetries = 3;
+      let delayMs = 1000;
+      let responseText = "";
+      let lastError: any = null;
 
-      const responseText = response.text || "{}";
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`[TRAVIX SRE] Gemini API request: Attempt ${attempt} of ${maxRetries}`);
+          const response = await ai.models.generateContent({
+            model: "gemini-3.5-flash",
+            contents: promptText,
+            config: {
+              responseMimeType: "application/json"
+            }
+          });
+          responseText = response.text || "{}";
+          lastError = null;
+          break; // Succeeded!
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err.message || String(err);
+          const is503Status = err.status === "UNAVAILABLE" || 
+                              err.status === 503 || 
+                              err.code === 503 || 
+                              errMsg.includes("503") || 
+                              errMsg.includes("demand") || 
+                              errMsg.includes("UNAVAILABLE") ||
+                              errMsg.includes("Service Unavailable");
+
+          if (is503Status && attempt < maxRetries) {
+            console.warn(`[TRAVIX SRE] Gemini API got 503/Unavailable (Demand Spike). Backing off for ${delayMs}ms before retrying...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            delayMs *= 2; // exponential delay expansion
+          } else {
+            // Fatal error or reached max retries
+            throw err;
+          }
+        }
+      }
+
+      if (lastError) {
+        throw lastError;
+      }
+
       const diagnosticData = JSON.parse(responseText.trim());
       res.json({ success: true, data: diagnosticData, liveFetched: true });
     } else {
       // Return beautiful, robust offline fallback content if api key is missing
       console.warn("Using offline simulated diagnostic generation.");
       const mockResult = generateMockDiagnostic(contentName, contentSeverity, contentLogs);
-      res.json({ success: true, data: mockResult, liveFetched: false });
+      res.json({ success: true, data: mockResult, liveFetched: false, highDemandFallback: false });
     }
   } catch (err: any) {
-    console.error("Gemini API request failed:", err);
+    console.error("Gemini API request failed final:", err);
     // Graceful fallback representation
     const fallbackMock = generateMockDiagnostic(contentName, contentSeverity, contentLogs);
     res.json({
       success: true,
       data: fallbackMock,
       liveFetched: false,
+      highDemandFallback: true,
       error: err.message || "Failed to call live Gemini AI core."
     });
   }

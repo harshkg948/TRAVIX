@@ -111,6 +111,8 @@ export default function App() {
   });
 
   const [appliedFixMessage, setAppliedFixMessage] = useState<string | null>(null);
+  const [isApiFallback, setIsApiFallback] = useState<boolean>(false);
+  const [apiErrorMsg, setApiErrorMsg] = useState<string | null>(null);
 
   // SVG Sparkline dynamic fluctuation streams
   const [latencyHistory, setLatencyHistory] = useState<number[]>([145, 142, 148, 152, 141, 146, 150, 149, 144, 146, 142, 147]);
@@ -164,6 +166,8 @@ export default function App() {
     setIsDiagnosticRunning(true);
     setAiDiagnosticLoaded(false);
     setAppliedFixMessage(null);
+    setIsApiFallback(false);
+    setApiErrorMsg(null);
 
     // Dynamic loading text triggers
     let stepIndex = 0;
@@ -191,9 +195,15 @@ export default function App() {
       if (resData.success && resData.data) {
         setDiagnostic(resData.data);
         setAiDiagnosticLoaded(true);
+        setIsApiFallback(resData.liveFetched === false);
+        if (resData.highDemandFallback) {
+          setApiErrorMsg(resData.error);
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Analysis failure:", err);
+      setIsApiFallback(true);
+      setApiErrorMsg(err?.message || "Failed to parse API outcome.");
     } finally {
       clearInterval(stepInterval);
       setIsDiagnosticRunning(false);
@@ -929,6 +939,21 @@ export default function App() {
                         </div>
                         {getSeverityBadge(diagnostic.severity)}
                       </div>
+
+                      {/* API High Demand/Failure Resilient Fallback Notice */}
+                      {isApiFallback && (
+                        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10.5px] font-mono flex items-start gap-2.5 leading-normal shadow-[inset_0_0_8px_rgba(245,158,11,0.05)]">
+                          <span className="text-amber-400 shrink-0 font-bold select-none text-xs">⚠️</span>
+                          <div>
+                            <span className="font-bold block uppercase text-[9px] text-amber-400 tracking-wider">TRAVIX Resilient Fallback Mode Engaged</span>
+                            <span className="text-[10px] text-amber-400/85">
+                              {apiErrorMsg 
+                                ? `Gemini API: (503 Space/Model Demand limits reached). SRE backup heuristics engaged automatically to ensure zero breakdown in Warroom Incident processing.`
+                                : `Direct Gemini API context unavailable. Correlated outage patterns through local SRE signature archives.`}
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Main explanation body */}
                       <div className="font-mono text-xs text-slate-300 leading-relaxed bg-slate-950/70 border border-slate-800/70 p-4 rounded-lg mb-5 space-y-4">
