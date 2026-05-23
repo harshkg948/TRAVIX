@@ -1,0 +1,6 @@
+{
+  "name": "TRAVIX",
+  "description": "Futuristic, enterprise-grade AI-powered Incident Intelligence Platform that automatically detects, analyzes, and resolves production outages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
